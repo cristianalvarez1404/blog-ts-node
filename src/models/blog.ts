@@ -7,12 +7,13 @@ import { Schema, model, Types } from "mongoose";
 /**
  * Custom modules
  */
+import { genSlug } from "@/utils";
 
 export interface IBlog {
   title: string;
   slug: string;
   content: string;
-  bannner: {
+  banner: {
     publicId: string;
     url: string;
     width: number;
@@ -44,7 +45,7 @@ const blogSchema = new Schema<IBlog>(
       type: String,
       required: [true, "Content is required"],
     },
-    bannner: {
+    banner: {
       publicId: {
         type: String,
         required: [true, "Banner public id is required"],
@@ -94,5 +95,12 @@ const blogSchema = new Schema<IBlog>(
     },
   },
 );
+
+blogSchema.pre("validate", function (next) {
+  if (this.title && !this.slug) {
+    this.slug = genSlug(this.title);
+  }
+  next();
+});
 
 export default model<IBlog>("Blog", blogSchema);
