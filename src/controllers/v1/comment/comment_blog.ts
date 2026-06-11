@@ -1,4 +1,10 @@
 /**
+ * Node modules
+ */
+import DOMPurify from "dompurify";
+import { JSDOM } from "jsdom";
+
+/**
  * Custom modules
  */
 import { logger } from "@/lib/winston";
@@ -9,18 +15,30 @@ import { logger } from "@/lib/winston";
 import User from "@/models/user";
 import Blog from "@/models/blog";
 import Like from "@/models/like";
-  
+import Comment from "@/models/comment";
+
 /**
  * Types
  */
 import type { Request, Response } from "express";
+import type { IComment } from "@/models/comment";
+
+type CommentData = Pick<IComment, "content">;
+
+/**
+ * Purify the comment content
+ */
+
+const window = new JSDOM("").window;
+const purify = DOMPurify(window);
 
 const commentBlog = async (req: Request, res: Response) => {
+  const { content } = req.body as CommentData;
   const { blogId } = req.params;
-  const { userId } = req.body;
+  const userId = req.userId;
 
   try {
-    const blog = await Blog.findById(blogId).select("likeCount").exec();
+    const blog = await Blog.findById(blogId).select("_id commentsCount").exec();
 
     if (!blog) {
       res.status(404).json({
@@ -30,28 +48,26 @@ const commentBlog = async (req: Request, res: Response) => {
       return;
     }
 
-    const existingLike = await Like.findOne({ blogId, userId }).lean().exec();
-    if (existingLike) {
-      res.status(400).json({
-        code: "BadRequest",
-        message: "You already like this blog",
-      });
-      return;
-    }
+    const cleanContent = purify.sanitize(content);
 
-    await Like.create({ blogId: blog._id, userId });
-
-    blog.likesCount++;
-    await blog.save();
-
-    logger.info("Blog liked successfully", {
-      userId,
+    const newComment = await Comment.create({
       blogId: blog._id,
-      likesCount: blog.likesCount,
+      content: cleanContent,
+      userId,
     });
 
-    res.status(200).json({
-      likesCount: blog.likesCount,
+    logger.info("New comment create", newComment);
+
+    blog.commentsCount++;
+    await blog.save();
+
+    logger.info("Blog comments count update", {
+      blogId: blog._id,
+      commentsCount: blog.commentsCount,
+    });
+
+    res.status(201).json({
+      commentC: newComment,
     });
   } catch (err) {
     res.status(500).json({
@@ -60,7 +76,7 @@ const commentBlog = async (req: Request, res: Response) => {
       error: err,
     });
 
-    logger.error("Error while liking blog", err);
+    logger.error("Error during commenting in blog", err);
   }
 };
 
